@@ -1,0 +1,46 @@
+{
+  "mcpServers": {
+    "n8n-mcp": {
+      "command": "n8n-mcp",
+      "args": [],
+      "env": {
+        "MCP_MODE": "stdio",
+        "LOG_LEVEL": "error",
+        "DISABLE_CONSOLE_OUTPUT": "true",
+        "N8N_API_URL": "https://n8n.instaroute.com",
+        "N8N_API_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4NWJlZTY3ZS1mNWY0LTQxODItOTcwNy00YjFkYzhmYjFmNmQiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzU2MDA4MzIyfQ.nE0ujnNyw6blIkgOIMUBynxnsaVV1cfSZT4fxl9RTdQ"
+      }
+    },
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ],
+      "disabled": false
+    },
+    "supabase-mcp-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@latest",
+        "--access-token",
+        "sbp_v0_6a9cb46be758c496bb2f539ecfadb165009e679b"
+      ],
+      "env": {}
+    },
+    "nylas-api": {
+      "command": "node",
+      "args": [
+        "C:\\Users\\alex\\.cursor\\mcp-servers\\nylas-api-mcp\\dist\\index.js"
+      ]
+    },
+    "shadcn": {
+      "command": "npx",
+      "args": [
+        "shadcn@latest",
+        "mcp"
+      ]
+    }
+  }
+}
