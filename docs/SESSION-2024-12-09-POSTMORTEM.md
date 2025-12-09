@@ -127,43 +127,74 @@ Where is `+16823152739` coming from? It's not in the account. Possibilities:
 
 ## Architecture Going Forward
 
-```
-Supabase DB:
-┌─────────────────────────────────────────────────┐
-│ dispatch_groups                                  │
-│ - id                                             │
-│ - name                                           │
-│ - signalwire_subscriber_id                       │
-│ - phone_cid (the outbound caller ID)            │
-├─────────────────────────────────────────────────┤
-│ users                                            │
-│ - id                                             │
-│ - dispatch_group_id                              │
-│ - has_own_cid (boolean)                          │
-│ - own_subscriber_id (if has_own_cid)            │
-└─────────────────────────────────────────────────┘
+**Users First, Assignments Second**
+
+```sql
+-- Source of truth
+users
+├── id (from auth.users)
+├── email
+├── name
+├── role
+
+-- Shared lines for groups
+dispatch_groups
+├── id
+├── name
+├── signalwire_subscriber_id
+├── phone_number
+
+-- Flexible mapping (user can have multiple assignments)
+user_assignments
+├── id
+├── user_id
+├── group_id (nullable) ─────► dispatch_groups
+├── direct_subscriber_id (nullable)
+├── direct_phone (nullable)
+├── is_default
 ```
 
-**Login Flow:**
-1. User logs in via Google OAuth
-2. Lookup user in DB
-3. If `has_own_cid` → use their `own_subscriber_id`
-4. Else → get `dispatch_group.signalwire_subscriber_id`
-5. Generate token for that Subscriber
-6. Browser SDK connects with correct caller ID
+**Examples:**
 
-**Current Case:**
-- Most dispatchers → dispatch group Subscriber (CID: `+16503946801`)
-- One special dispatcher → their own Subscriber (unique CID)
+| User | Assignment |
+|------|------------|
+| Alex (dispatcher) | group: "Dispatch" → shared line |
+| Jordan (dispatcher) | group: "Dispatch" + direct: own number |
+| Sam (manager) | direct: own number only |
+| Taylor (flex) | group: "Dispatch" + group: "Sales" |
+
+**Token Flow:**
+```
+User logs in
+    ↓
+Get user's assignments from Supabase
+    ↓
+Multiple assignments?
+    YES → Use is_default, or let them pick in UI
+    NO  → Use the one they have
+    ↓
+Get token for that Subscriber
+```
+
+**UI Bonus:** Dropdown if multiple lines — "Calling as: Dispatch / My Line"
+
+**InstaRoute Multi-tenant:** Each customer's users get assigned to that customer's group.
 
 ---
 
 ## Next Session Tasks
 
 1. Create `dispatch_groups` table in Supabase
-2. Update `users` table with `dispatch_group_id`, `has_own_cid`, `own_subscriber_id`
-3. Update `get-signalwire-token` Edge Function to lookup correct Subscriber
-4. Test multi-dispatcher scenario
+2. Create `user_assignments` table in Supabase
+3. Update `get-signalwire-token` Edge Function:
+   - Lookup user's assignments
+   - If multiple → use `is_default`
+   - Get token for correct Subscriber
+4. Add UI dropdown for "Calling as: X" if user has multiple assignments
+5. Test scenarios:
+   - Dispatcher with group assignment only
+   - Dispatcher with group + own number
+   - Manager with own number only
 
 **Relay SDK is NOT needed** — can add later if per-call CID flexibility required.
 
