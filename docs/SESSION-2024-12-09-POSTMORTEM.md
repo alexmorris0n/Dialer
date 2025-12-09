@@ -113,21 +113,57 @@ Where is `+16823152739` coming from? It's not in the account. Possibilities:
 
 **Call Fabric / Browser SDK:** Caller ID is set at the Subscriber or Resource level — not per-call from the browser.
 
-**RELAY SDK:** You control `from` on every dial:
-```javascript
-const call = await voiceClient.dialPhone({ 
-  from: "+1XXXXXXXXXX",  // Your caller ID
-  to: "+1YYYYYYYYY", 
-  timeout: 30 
-});
-```
-
-For dispatch: outbound calls show business number.
-For InstaRoute multi-tenant: each customer gets their own caller ID.
-**RELAY gives per-call control.**
+**RELAY SDK:** You control `from` on every dial — but requires backend server.
 
 ---
 
-## Next Session
-Start fresh with Relay SDK architecture. Don't touch Browser SDK for outbound calls.
+## RESOLUTION: Assign Number to Subscriber
+
+**Tested and confirmed:** Assigning phone number to SignalWire Subscriber makes Browser SDK calls use that number as caller ID.
+
+**Decision: Keep Browser SDK** — simpler, already working, meets requirements.
+
+---
+
+## Architecture Going Forward
+
+```
+Supabase DB:
+┌─────────────────────────────────────────────────┐
+│ dispatch_groups                                  │
+│ - id                                             │
+│ - name                                           │
+│ - signalwire_subscriber_id                       │
+│ - phone_cid (the outbound caller ID)            │
+├─────────────────────────────────────────────────┤
+│ users                                            │
+│ - id                                             │
+│ - dispatch_group_id                              │
+│ - has_own_cid (boolean)                          │
+│ - own_subscriber_id (if has_own_cid)            │
+└─────────────────────────────────────────────────┘
+```
+
+**Login Flow:**
+1. User logs in via Google OAuth
+2. Lookup user in DB
+3. If `has_own_cid` → use their `own_subscriber_id`
+4. Else → get `dispatch_group.signalwire_subscriber_id`
+5. Generate token for that Subscriber
+6. Browser SDK connects with correct caller ID
+
+**Current Case:**
+- Most dispatchers → dispatch group Subscriber (CID: `+16503946801`)
+- One special dispatcher → their own Subscriber (unique CID)
+
+---
+
+## Next Session Tasks
+
+1. Create `dispatch_groups` table in Supabase
+2. Update `users` table with `dispatch_group_id`, `has_own_cid`, `own_subscriber_id`
+3. Update `get-signalwire-token` Edge Function to lookup correct Subscriber
+4. Test multi-dispatcher scenario
+
+**Relay SDK is NOT needed** — can add later if per-call CID flexibility required.
 
