@@ -109,6 +109,25 @@ Where is `+16823152739` coming from? It's not in the account. Possibilities:
 
 ---
 
+## Key Insight (User Research)
+
+**Call Fabric / Browser SDK:** Caller ID is set at the Subscriber or Resource level — not per-call from the browser.
+
+**RELAY SDK:** You control `from` on every dial:
+```javascript
+const call = await voiceClient.dialPhone({ 
+  from: "+1XXXXXXXXXX",  // Your caller ID
+  to: "+1YYYYYYYYY", 
+  timeout: 30 
+});
+```
+
+For dispatch: outbound calls show business number.
+For InstaRoute multi-tenant: each customer gets their own caller ID.
+**RELAY gives per-call control.**
+
+---
+
 ## Next Session
 Start fresh with Relay SDK architecture. Don't touch Browser SDK for outbound calls.
 
