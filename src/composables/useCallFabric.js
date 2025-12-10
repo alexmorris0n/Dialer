@@ -233,7 +233,12 @@ export function useCallFabric() {
       console.log('📞 Destination number:', phoneNumber)
       console.log('📞 rootElement:', rootElement)
 
+      // Get caller ID from options or use default
+      const callerID = options.callerID || '+16503946801'
+      
       console.log('📞 Calling client.dial()...')
+      console.log('📞 userVariables:', { destination: phoneNumber, callerID })
+      
       const call = await client.value.dial({
         to,
         rootElement,
@@ -241,6 +246,7 @@ export function useCallFabric() {
         video: false,
         userVariables: {
           destination: phoneNumber,
+          callerID: callerID,
         },
       })
       console.log('📞 client.dial() returned:', call)
