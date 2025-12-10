@@ -1,29 +1,6 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "name": "dispatcher-phone",
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "framework": "vite",
   "rewrites": [
-    {
-      "source": "/api/:path*",
-      "destination": "/api/:path*"
-    }
-  ],
-  "headers": [
-    {
-      "source": "/api/(.*)",
-      "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "*" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" }
-      ]
-    }
-  ],
-  "env": {
-    "DEFAULT_CALLER_ID": "+16503946801",
-    "DISPATCHER_ADDRESSES": "/private/dispatcher-alex,/private/dispatcher-jordan,/private/dispatcher-sam"
-  }
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
-
 
