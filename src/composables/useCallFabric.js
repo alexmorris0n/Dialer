@@ -223,31 +223,22 @@ export function useCallFabric() {
       // Format phone number if needed
       const phoneNumber = formatPhoneNumber(destination)
       
-      // Dial the SWML resource for outbound calls
-      // This allows us to control caller ID at the group level
-      const to = options.resourceAddress || '/public/dispatch-outbound'
+      // Dial the phone number directly
+      // Caller ID comes from the Subscriber's assigned number in SignalWire
+      const to = phoneNumber
 
       const rootElement = options.rootElement || document.getElementById('sw-call-container')
       
-      console.log('📞 Dialing resource:', to)
-      console.log('📞 Destination number:', phoneNumber)
+      console.log('📞 Dialing:', to)
       console.log('📞 rootElement:', rootElement)
 
-      // Get caller ID from options or use default
-      const callerID = options.callerID || '+16503946801'
-      
-      console.log('📞 Calling client.dial()...')
-      console.log('📞 userVariables:', { destination: phoneNumber, callerID })
+      console.log('📞 Calling client.dial() to:', to)
       
       const call = await client.value.dial({
         to,
         rootElement,
         audio: true,
         video: false,
-        userVariables: {
-          destination: phoneNumber,
-          callerID: callerID,
-        },
       })
       console.log('📞 client.dial() returned:', call)
 
