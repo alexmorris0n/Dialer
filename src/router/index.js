@@ -43,6 +43,39 @@ const router = createRouter({
 router.beforeEach(async (to, from, next) => {
   const requiresAuth = to.meta.requiresAuth
 
+  // Check if this is an OAuth callback (has access_token in hash)
+  const hashParams = new URLSearchParams(window.location.hash.substring(1))
+  const hasOAuthToken = hashParams.has('access_token')
+
+  if (hasOAuthToken) {
+    // This is an OAuth callback - Supabase will automatically parse the hash
+    // and establish a session. We need to wait for it to complete.
+    try {
+      // Exchange the hash tokens for a session
+      const { data, error } = await supabase.auth.setSession({
+        access_token: hashParams.get('access_token'),
+        refresh_token: hashParams.get('refresh_token')
+      })
+      
+      if (error) {
+        console.error('OAuth callback error:', error)
+        next('/login')
+        return
+      }
+
+      if (data.session) {
+        // Clear the hash and navigate cleanly
+        window.history.replaceState(null, '', to.path)
+        next()
+        return
+      }
+    } catch (err) {
+      console.error('Error processing OAuth callback:', err)
+      next('/login')
+      return
+    }
+  }
+
   if (requiresAuth) {
     // Check if user is authenticated
     const { data: { session } } = await supabase.auth.getSession()

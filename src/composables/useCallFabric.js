@@ -1,6 +1,5 @@
 import { ref, computed, onUnmounted } from 'vue'
 import { SignalWire } from '@signalwire/js'
-import { supabase } from '@/lib/supabase'
 
 /**
  * SignalWire Browser SDK wrapper
@@ -8,9 +7,6 @@ import { supabase } from '@/lib/supabase'
  * 
  * Token refresh: Tokens have TTL (default 1 hour). 
  * We refresh at 80% of lifetime to avoid disconnects.
- * 
- * Call logging: All calls are logged to Supabase with the dispatcher's user ID.
- * One shared SignalWire subscriber, but per-user tracking in our DB.
  */
 
 // Singleton state (shared across components)
@@ -24,121 +20,12 @@ const isMuted = ref(false)
 const callDuration = ref(0)
 const error = ref(null)
 
-// Current user for call logging
-const currentUserId = ref(null)
-
-// Line selection for outbound caller ID
-const currentCallerID = ref('+16503946801')  // Default dispatch number
-const availableLines = ref([])               // User's assigned lines from Supabase
-const selectedLineId = ref(null)             // Currently selected line ID
-
-// SWML Resource address for outbound calls
-const OUTBOUND_RESOURCE = '/public/dispatch-outbound'
-
-// Active call metadata for logging
-let activeCallData = null
-
 // Token management
 let tokenRefreshTimeout = null
 let durationInterval = null
 
 export function useCallFabric() {
   
-  /**
-   * Set the current user for call logging
-   * @param {string} userId - Supabase user ID
-   */
-  const setCurrentUser = (userId) => {
-    currentUserId.value = userId
-    console.log('📞 Current user set for call logging:', userId)
-  }
-
-  /**
-   * Set available lines for the user (from token response)
-   * @param {Array} lines - Array of line objects { id, name, phone, is_default }
-   */
-  const setAvailableLines = (lines) => {
-    availableLines.value = lines || []
-    
-    // Set default line if available
-    const defaultLine = lines?.find(l => l.is_default) || lines?.[0]
-    if (defaultLine) {
-      currentCallerID.value = defaultLine.phone
-      selectedLineId.value = defaultLine.id
-      console.log('📞 Default line set:', defaultLine.name, defaultLine.phone)
-    }
-  }
-
-  /**
-   * Switch to a different line for outbound calls
-   * @param {string} lineId - The line ID to switch to
-   */
-  const switchLine = (lineId) => {
-    const line = availableLines.value.find(l => l.id === lineId)
-    if (line) {
-      currentCallerID.value = line.phone
-      selectedLineId.value = line.id
-      console.log('📞 Switched to line:', line.name, line.phone)
-    }
-  }
-
-  /**
-   * Log a call to Supabase
-   */
-  const logCallToSupabase = async (callData) => {
-    if (!currentUserId.value) {
-      console.warn('⚠️ No current user set, skipping call log')
-      return null
-    }
-
-    try {
-      const { data, error: insertError } = await supabase
-        .from('calls')
-        .insert({
-          signalwire_call_id: callData.signalwireCallId,
-          user_id: currentUserId.value,
-          caller_phone: callData.callerPhone,
-          callee_phone: callData.calleePhone,
-          direction: callData.direction,
-          status: callData.status || 'in_progress',
-          started_at: callData.startedAt || new Date().toISOString(),
-        })
-        .select()
-        .single()
-
-      if (insertError) {
-        console.error('❌ Failed to log call:', insertError)
-        return null
-      }
-
-      console.log('📝 Call logged to Supabase:', data.id)
-      return data
-    } catch (err) {
-      console.error('❌ Error logging call:', err)
-      return null
-    }
-  }
-
-  /**
-   * Update a call record in Supabase
-   */
-  const updateCallInSupabase = async (callId, updates) => {
-    try {
-      const { error: updateError } = await supabase
-        .from('calls')
-        .update(updates)
-        .eq('id', callId)
-
-      if (updateError) {
-        console.error('❌ Failed to update call:', updateError)
-      } else {
-        console.log('📝 Call updated:', callId, updates)
-      }
-    } catch (err) {
-      console.error('❌ Error updating call:', err)
-    }
-  }
-
   /**
    * Connect to SignalWire with a subscriber token
    * @param {string} token - Subscriber token from backend
@@ -248,19 +135,8 @@ export function useCallFabric() {
       }
     })
 
-    call.on('destroy', async () => {
+    call.on('destroy', () => {
       console.log('📞 Call destroyed')
-      
-      // Update call record in Supabase
-      if (activeCallData?.supabaseCallId) {
-        await updateCallInSupabase(activeCallData.supabaseCallId, {
-          status: 'completed',
-          ended_at: new Date().toISOString(),
-          duration_seconds: callDuration.value,
-        })
-        activeCallData = null
-      }
-
       activeCall.value = null
       incomingCall.value = null
       callState.value = 'idle'
@@ -324,13 +200,9 @@ export function useCallFabric() {
   }
 
   /**
-   * Make an outbound call via SWML Resource
-   * 
-   * This dials the SWML resource address (/public/dispatch-outbound) which
-   * triggers a webhook that returns SWML with the correct caller ID.
-   * 
+   * Make an outbound call
    * @param {string} destination - Phone number or SIP address
-   * @param {object} options - Optional: { rootElement, callerID }
+   * @param {object} options - Optional: { fromFabricAddressId, rootElement }
    */
   const dial = async (destination, options = {}) => {
     if (!client.value || !isConnected.value) {
@@ -351,49 +223,29 @@ export function useCallFabric() {
       // Format phone number if needed
       const phoneNumber = formatPhoneNumber(destination)
       
-      // Use selected caller ID or default
-      const callerID = options.callerID || currentCallerID.value || '+16503946801'
-      
+      // Dial the SWML resource for outbound calls
+      // This allows us to control caller ID at the group level
+      const to = options.resourceAddress || '/public/dispatch-outbound'
+
       const rootElement = options.rootElement || document.getElementById('sw-call-container')
       
-      console.log('📞 Dialing via SWML Resource:', OUTBOUND_RESOURCE)
-      console.log('📞 Destination:', phoneNumber)
-      console.log('📞 Caller ID:', callerID)
+      console.log('📞 Dialing resource:', to)
+      console.log('📞 Destination number:', phoneNumber)
       console.log('📞 rootElement:', rootElement)
-      
-      // Dial the SWML resource with userVariables
-      // The webhook will receive these and build SWML with connect { from, to }
-      console.log('📞 Calling client.dial() with userVariables...')
+
+      console.log('📞 Calling client.dial()...')
       const call = await client.value.dial({
-        to: OUTBOUND_RESOURCE,
+        to,
         rootElement,
         audio: true,
         video: false,
         userVariables: {
           destination: phoneNumber,
-          callerID: callerID
-        }
+        },
       })
       console.log('📞 client.dial() returned:', call)
 
       activeCall.value = call
-      
-      // Store call data for logging
-      activeCallData = {
-        signalwireCallId: call.id || call.uuid,
-        callerPhone: callerID,
-        calleePhone: phoneNumber,
-        direction: 'outbound',
-        startedAt: new Date().toISOString(),
-        supabaseCallId: null,
-      }
-
-      // Log call to Supabase
-      const loggedCall = await logCallToSupabase(activeCallData)
-      if (loggedCall) {
-        activeCallData.supabaseCallId = loggedCall.id
-      }
-
       setupCallListeners(call)
       
       // START THE CALL - this is required!
@@ -423,24 +275,6 @@ export function useCallFabric() {
       console.log('📞 Answering call...')
       await incomingCall.value.answer()
       activeCall.value = incomingCall.value
-      
-      // Store call data for logging (inbound)
-      activeCallData = {
-        signalwireCallId: incomingCall.value.id || incomingCall.value.uuid,
-        callerPhone: incomingCall.value.from || 'unknown',
-        calleePhone: incomingCall.value.to || 'unknown',
-        direction: 'inbound',
-        startedAt: new Date().toISOString(),
-        answeredAt: new Date().toISOString(),
-        supabaseCallId: null,
-      }
-
-      // Log call to Supabase - dispatcher who answered
-      const loggedCall = await logCallToSupabase(activeCallData)
-      if (loggedCall) {
-        activeCallData.supabaseCallId = loggedCall.id
-      }
-
       incomingCall.value = null
       callState.value = 'active'
       startDurationTimer()
@@ -690,12 +524,6 @@ export function useCallFabric() {
     callDuration,
     formattedDuration,
     error,
-    currentUserId,
-    
-    // Line selection state
-    currentCallerID,
-    availableLines,
-    selectedLineId,
 
     // Actions
     connect,
@@ -710,9 +538,6 @@ export function useCallFabric() {
     sendDTMF,
     goOnline,
     goOffline,
-    setCurrentUser,
-    setAvailableLines,
-    switchLine,
 
     // Helpers
     formatPhoneNumber

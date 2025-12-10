@@ -15,63 +15,34 @@
     <div class="p-4">
       <!-- Header -->
       <div class="max-w-md mx-auto mb-6">
-        <div class="bg-card border rounded-lg shadow p-4">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-semibold">
-                {{ userInitials }}
-              </div>
-              <div>
-                <p class="font-medium">{{ userProfile?.name || 'User' }}</p>
-                <p class="text-xs text-muted-foreground">{{ userProfile?.email }}</p>
-              </div>
+        <div class="bg-card border rounded-lg shadow p-4 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-semibold">
+              {{ userInitials }}
             </div>
-            <div class="flex items-center gap-3">
-              <!-- Connection Status -->
-              <div class="flex items-center gap-1.5">
-                <span 
-                  class="w-2 h-2 rounded-full"
-                  :class="isConnected ? 'bg-green-500' : 'bg-gray-400'"
-                ></span>
-                <span class="text-xs text-muted-foreground">
-                  {{ isConnected ? 'Connected' : isConnecting ? 'Connecting...' : 'Offline' }}
-                </span>
-              </div>
-              <!-- Sign Out -->
-              <button
-                @click="handleSignOut"
-                class="px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground border rounded-md hover:bg-accent transition-colors"
-              >
-                Sign Out
-              </button>
+            <div>
+              <p class="font-medium">{{ userProfile?.name || 'User' }}</p>
+              <p class="text-xs text-muted-foreground">{{ userProfile?.email }}</p>
             </div>
           </div>
-
-          <!-- Line Selector (only show if multiple lines available) -->
-          <div v-if="availableLines.length > 1" class="mt-3 pt-3 border-t">
-            <label class="text-xs text-muted-foreground block mb-1.5">Calling as:</label>
-            <select
-              :value="selectedLineId"
-              @change="handleLineChange"
-              class="w-full px-3 py-2 text-sm bg-background border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-              :disabled="callState !== 'idle'"
+          <div class="flex items-center gap-3">
+            <!-- Connection Status -->
+            <div class="flex items-center gap-1.5">
+              <span 
+                class="w-2 h-2 rounded-full"
+                :class="isConnected ? 'bg-green-500' : 'bg-gray-400'"
+              ></span>
+              <span class="text-xs text-muted-foreground">
+                {{ isConnected ? 'Connected' : isConnecting ? 'Connecting...' : 'Offline' }}
+              </span>
+            </div>
+            <!-- Sign Out -->
+            <button
+              @click="handleSignOut"
+              class="px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground border rounded-md hover:bg-accent transition-colors"
             >
-              <option 
-                v-for="line in availableLines" 
-                :key="line.id" 
-                :value="line.id"
-              >
-                {{ line.name }} ({{ formatPhoneForDisplay(line.phone) }})
-              </option>
-            </select>
-          </div>
-
-          <!-- Single line display (when only one line available) -->
-          <div v-else-if="availableLines.length === 1" class="mt-3 pt-3 border-t">
-            <p class="text-xs text-muted-foreground">
-              Calling as: <span class="font-medium text-foreground">{{ availableLines[0].name }}</span>
-              <span class="ml-1 text-muted-foreground">({{ formatPhoneForDisplay(availableLines[0].phone) }})</span>
-            </p>
+              Sign Out
+            </button>
           </div>
         </div>
       </div>
@@ -110,8 +81,6 @@
           <p>Call State: {{ callState }}</p>
           <p>Token: {{ signalwireToken ? '✅ Obtained' : '❌ Missing' }}</p>
           <p>Connected: {{ isConnected ? '✅' : '❌' }}</p>
-          <p>Caller ID: {{ currentCallerID }}</p>
-          <p>Lines: {{ availableLines.length }}</p>
           <p v-if="userProfile?.signalwire_subscriber_id">
             Subscriber: {{ userProfile.signalwire_subscriber_id.substring(0, 15) }}...
           </p>
@@ -142,9 +111,6 @@ const {
   isMuted,
   formattedDuration,
   error: callError,
-  currentCallerID,
-  availableLines,
-  selectedLineId,
   connect,
   disconnect,
   dial,
@@ -152,10 +118,7 @@ const {
   reject,
   hangup,
   toggleMute,
-  sendDTMF,
-  setCurrentUser,
-  setAvailableLines,
-  switchLine
+  sendDTMF
 } = useCallFabric()
 
 // Local state
@@ -179,33 +142,15 @@ onMounted(async () => {
   // Load user profile
   userProfile.value = await getUserProfile()
   
-  // Set current user for call logging
-  if (userProfile.value?.id) {
-    setCurrentUser(userProfile.value.id)
-  }
-  
   // Get SignalWire token and connect
   try {
     console.log('🔄 Getting SignalWire token...')
-    const tokenResponse = await getSignalWireToken()
-    
-    // Token response now includes available_lines
-    signalwireToken.value = tokenResponse.token || tokenResponse
-    
-    // Set available lines for caller ID selection
-    if (tokenResponse.available_lines) {
-      setAvailableLines(tokenResponse.available_lines)
-      console.log('📞 Available lines:', tokenResponse.available_lines)
-    }
-    
+    signalwireToken.value = await getSignalWireToken()
     console.log('✅ SignalWire token obtained')
     
     // Connect to SignalWire with token refresh callback
     await connect(signalwireToken.value, {
-      onTokenRefresh: async () => {
-        const refreshed = await getSignalWireToken()
-        return refreshed.token || refreshed
-      }
+      onTokenRefresh: getSignalWireToken
     })
   } catch (err) {
     console.error('❌ Failed to initialize SignalWire:', err)
@@ -274,24 +219,5 @@ const handleSendDTMF = async (digit) => {
 const handleSignOut = async () => {
   await disconnect()
   await signOut()
-}
-
-const handleLineChange = (event) => {
-  const lineId = event.target.value
-  switchLine(lineId)
-}
-
-// Format phone number for display (e.g., +16503946801 -> (650) 394-6801)
-const formatPhoneForDisplay = (phone) => {
-  if (!phone) return ''
-  const digits = phone.replace(/\D/g, '')
-  if (digits.length === 11 && digits.startsWith('1')) {
-    const num = digits.substring(1)
-    return `(${num.substring(0,3)}) ${num.substring(3,6)}-${num.substring(6)}`
-  }
-  if (digits.length === 10) {
-    return `(${digits.substring(0,3)}) ${digits.substring(3,6)}-${digits.substring(6)}`
-  }
-  return phone
 }
 </script>
