@@ -17,3 +17,4 @@ CREATE POLICY "Dispatchers can insert calls" ON calls
 CREATE POLICY "Dispatchers can update own calls" ON calls
   FOR UPDATE USING (auth.uid() = user_id);
 
+

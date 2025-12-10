@@ -27,6 +27,14 @@ const error = ref(null)
 // Current user for call logging
 const currentUserId = ref(null)
 
+// Line selection for outbound caller ID
+const currentCallerID = ref('+16503946801')  // Default dispatch number
+const availableLines = ref([])               // User's assigned lines from Supabase
+const selectedLineId = ref(null)             // Currently selected line ID
+
+// SWML Resource address for outbound calls
+const OUTBOUND_RESOURCE = '/public/dispatch-outbound'
+
 // Active call metadata for logging
 let activeCallData = null
 
@@ -43,6 +51,35 @@ export function useCallFabric() {
   const setCurrentUser = (userId) => {
     currentUserId.value = userId
     console.log('📞 Current user set for call logging:', userId)
+  }
+
+  /**
+   * Set available lines for the user (from token response)
+   * @param {Array} lines - Array of line objects { id, name, phone, is_default }
+   */
+  const setAvailableLines = (lines) => {
+    availableLines.value = lines || []
+    
+    // Set default line if available
+    const defaultLine = lines?.find(l => l.is_default) || lines?.[0]
+    if (defaultLine) {
+      currentCallerID.value = defaultLine.phone
+      selectedLineId.value = defaultLine.id
+      console.log('📞 Default line set:', defaultLine.name, defaultLine.phone)
+    }
+  }
+
+  /**
+   * Switch to a different line for outbound calls
+   * @param {string} lineId - The line ID to switch to
+   */
+  const switchLine = (lineId) => {
+    const line = availableLines.value.find(l => l.id === lineId)
+    if (line) {
+      currentCallerID.value = line.phone
+      selectedLineId.value = line.id
+      console.log('📞 Switched to line:', line.name, line.phone)
+    }
   }
 
   /**
@@ -287,9 +324,13 @@ export function useCallFabric() {
   }
 
   /**
-   * Make an outbound call
+   * Make an outbound call via SWML Resource
+   * 
+   * This dials the SWML resource address (/public/dispatch-outbound) which
+   * triggers a webhook that returns SWML with the correct caller ID.
+   * 
    * @param {string} destination - Phone number or SIP address
-   * @param {object} options - Optional: { rootElement }
+   * @param {object} options - Optional: { rootElement, callerID }
    */
   const dial = async (destination, options = {}) => {
     if (!client.value || !isConnected.value) {
@@ -310,20 +351,28 @@ export function useCallFabric() {
       // Format phone number if needed
       const phoneNumber = formatPhoneNumber(destination)
       
-      // Default dispatch number for logging
-      const fromNumber = options.from || '+16503946801'
+      // Use selected caller ID or default
+      const callerID = options.callerID || currentCallerID.value || '+16503946801'
       
       const rootElement = options.rootElement || document.getElementById('sw-call-container')
       
-      console.log('📞 Dialing:', phoneNumber)
+      console.log('📞 Dialing via SWML Resource:', OUTBOUND_RESOURCE)
+      console.log('📞 Destination:', phoneNumber)
+      console.log('📞 Caller ID:', callerID)
       console.log('📞 rootElement:', rootElement)
       
-      console.log('📞 Calling client.dial()...')
+      // Dial the SWML resource with userVariables
+      // The webhook will receive these and build SWML with connect { from, to }
+      console.log('📞 Calling client.dial() with userVariables...')
       const call = await client.value.dial({
-        to: phoneNumber,
+        to: OUTBOUND_RESOURCE,
         rootElement,
         audio: true,
         video: false,
+        userVariables: {
+          destination: phoneNumber,
+          callerID: callerID
+        }
       })
       console.log('📞 client.dial() returned:', call)
 
@@ -332,7 +381,7 @@ export function useCallFabric() {
       // Store call data for logging
       activeCallData = {
         signalwireCallId: call.id || call.uuid,
-        callerPhone: fromNumber,
+        callerPhone: callerID,
         calleePhone: phoneNumber,
         direction: 'outbound',
         startedAt: new Date().toISOString(),
@@ -642,6 +691,11 @@ export function useCallFabric() {
     formattedDuration,
     error,
     currentUserId,
+    
+    // Line selection state
+    currentCallerID,
+    availableLines,
+    selectedLineId,
 
     // Actions
     connect,
@@ -657,6 +711,8 @@ export function useCallFabric() {
     goOnline,
     goOffline,
     setCurrentUser,
+    setAvailableLines,
+    switchLine,
 
     // Helpers
     formatPhoneNumber

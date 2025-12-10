@@ -13,3 +13,4 @@ ALTER TABLE calls ADD CONSTRAINT calls_status_check
 -- DELETE FROM calls WHERE signalwire_call_id IS NULL;
 -- ALTER TABLE calls ALTER COLUMN signalwire_call_id SET NOT NULL;
 
+
