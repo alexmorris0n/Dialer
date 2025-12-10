@@ -21,3 +21,4 @@ DROP POLICY IF EXISTS "Users can view dispatch groups" ON dispatch_groups;
 DROP TABLE IF EXISTS user_assignments;
 DROP TABLE IF EXISTS dispatch_groups;
 
+
