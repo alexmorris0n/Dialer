@@ -200,9 +200,13 @@ export function useCallFabric() {
   }
 
   /**
-   * Make an outbound call
-   * @param {string} destination - Phone number or SIP address
-   * @param {object} options - Optional: { fromFabricAddressId, rootElement }
+   * Make an outbound call via SWML webhook
+   * This allows us to control the outbound caller ID dynamically
+   * 
+   * @param {string} destination - Phone number to dial
+   * @param {object} options - Optional: { callerID, rootElement }
+   *   - callerID: The phone number to display as caller ID
+   *   - rootElement: DOM element for call UI
    */
   const dial = async (destination, options = {}) => {
     if (!client.value || !isConnected.value) {
@@ -222,23 +226,31 @@ export function useCallFabric() {
 
       // Format phone number if needed
       const phoneNumber = formatPhoneNumber(destination)
+      const callerID = options.callerID ? formatPhoneNumber(options.callerID) : null
       
-      // Dial the phone number directly
-      // Caller ID comes from the Subscriber's assigned number in SignalWire
-      const to = phoneNumber
+      // We dial a SWML resource that will handle the outbound call
+      // The SWML webhook receives our userVariables and connects with the right caller ID
+      // Resource address format: /public/<resource-name> or /private/<resource-name>
+      const swmlResourceAddress = '/public/dispatch-outbound'
 
       const rootElement = options.rootElement || document.getElementById('sw-call-container')
       
-      console.log('📞 Dialing:', to)
+      console.log('📞 Dialing via SWML resource:', swmlResourceAddress)
+      console.log('📞 Destination:', phoneNumber)
+      console.log('📞 Caller ID:', callerID)
       console.log('📞 rootElement:', rootElement)
 
-      console.log('📞 Calling client.dial() to:', to)
-      
+      // Dial the SWML resource with userVariables
+      // These variables are passed to the webhook and used to build dynamic SWML
       const call = await client.value.dial({
-        to,
+        to: swmlResourceAddress,
         rootElement,
         audio: true,
         video: false,
+        userVariables: {
+          destination: phoneNumber,
+          callerID: callerID
+        }
       })
       console.log('📞 client.dial() returned:', call)
 

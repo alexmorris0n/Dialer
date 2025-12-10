@@ -127,6 +127,7 @@ export function useAuth() {
   }
 
   // Get SignalWire Subscriber token from backend
+  // Returns: { token, available_lines }
   const getSignalWireToken = async () => {
     try {
       if (!session.value) {
@@ -144,7 +145,13 @@ export function useAuth() {
         throw new Error(functionError.message || 'Failed to get SignalWire token')
       }
       
-      return data.token
+      // Return full response including available_lines for caller ID selection
+      return {
+        token: data.token,
+        subscriber_id: data.subscriber_id,
+        expires_at: data.expires_at,
+        available_lines: data.available_lines || []
+      }
     } catch (err) {
       console.error('Error getting SignalWire token:', err)
       error.value = err.message

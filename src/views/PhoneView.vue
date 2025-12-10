@@ -50,6 +50,25 @@
       <!-- Phone Interface -->
       <div class="max-w-md mx-auto">
         <div class="bg-card border rounded-lg shadow p-6">
+          <!-- Line Selector (when idle) -->
+          <div v-if="callState === 'idle' && availableLines.length > 0" class="mb-4">
+            <label class="block text-sm font-medium text-muted-foreground mb-2">
+              Calling as:
+            </label>
+            <select
+              v-model="selectedLineId"
+              class="w-full px-3 py-2 bg-background border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option 
+                v-for="line in availableLines" 
+                :key="line.id" 
+                :value="line.id"
+              >
+                {{ line.name }} ({{ formatDisplayNumber(line.phone_number) }})
+              </option>
+            </select>
+          </div>
+
           <!-- Active Call View -->
           <ActiveCall
             v-if="callState !== 'idle'"
@@ -91,7 +110,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useAuth } from '@/composables/useAuth'
 import { useCallFabric } from '@/composables/useCallFabric'
 import Dialer from '@/components/phone/Dialer.vue'
@@ -126,12 +145,19 @@ const userProfile = ref(null)
 const signalwireToken = ref(null)
 const currentCallNumber = ref('')
 const dialerRef = ref(null)
+const availableLines = ref([])
+const selectedLineId = ref(null)
 
 // Computed
 const userInitials = computed(() => {
   if (!userProfile.value?.name) return 'U'
   const names = userProfile.value.name.split(' ')
   return names.map(n => n[0]).join('').substring(0, 2).toUpperCase()
+})
+
+// Computed
+const selectedLine = computed(() => {
+  return availableLines.value.find(line => line.id === selectedLineId.value) || null
 })
 
 // Lifecycle
@@ -145,12 +171,29 @@ onMounted(async () => {
   // Get SignalWire token and connect
   try {
     console.log('🔄 Getting SignalWire token...')
-    signalwireToken.value = await getSignalWireToken()
+    const tokenResponse = await getSignalWireToken()
+    signalwireToken.value = tokenResponse.token
+    
+    // Store available lines for caller ID selection
+    availableLines.value = tokenResponse.available_lines || []
+    console.log('📞 Available lines:', availableLines.value)
+    
+    // Set default selected line
+    const defaultLine = availableLines.value.find(line => line.is_default)
+    if (defaultLine) {
+      selectedLineId.value = defaultLine.id
+    } else if (availableLines.value.length > 0) {
+      selectedLineId.value = availableLines.value[0].id
+    }
+    
     console.log('✅ SignalWire token obtained')
     
     // Connect to SignalWire with token refresh callback
     await connect(signalwireToken.value, {
-      onTokenRefresh: getSignalWireToken
+      onTokenRefresh: async () => {
+        const response = await getSignalWireToken()
+        return response.token
+      }
     })
   } catch (err) {
     console.error('❌ Failed to initialize SignalWire:', err)
@@ -162,6 +205,20 @@ onUnmounted(() => {
   disconnect()
 })
 
+// Helpers
+const formatDisplayNumber = (number) => {
+  if (!number) return ''
+  // Format +1XXXXXXXXXX as (XXX) XXX-XXXX
+  const cleaned = number.replace(/\D/g, '')
+  if (cleaned.length === 11 && cleaned.startsWith('1')) {
+    return `(${cleaned.slice(1, 4)}) ${cleaned.slice(4, 7)}-${cleaned.slice(7)}`
+  }
+  if (cleaned.length === 10) {
+    return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`
+  }
+  return number
+}
+
 // Handlers
 const handleDial = async (phoneNumber) => {
   if (!isConnected.value) {
@@ -172,7 +229,12 @@ const handleDial = async (phoneNumber) => {
   try {
     dialerRef.value?.setDialing(true)
     currentCallNumber.value = phoneNumber
-    await dial(phoneNumber)
+    
+    // Get caller ID from selected line
+    const callerID = selectedLine.value?.phone_number || null
+    console.log('📞 Dialing with caller ID:', callerID)
+    
+    await dial(phoneNumber, { callerID })
     dialerRef.value?.clear()
   } catch (err) {
     console.error('Dial failed:', err)

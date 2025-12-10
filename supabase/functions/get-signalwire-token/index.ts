@@ -126,11 +126,64 @@ Deno.serve(async (req) => {
 
     const tokenData = await tokenResponse.json()
 
+    // Fetch user's available lines (dispatch groups and direct lines)
+    const { data: assignments, error: assignmentError } = await supabaseClient
+      .from('user_assignments')
+      .select(`
+        id,
+        is_default,
+        direct_phone,
+        direct_subscriber_id,
+        dispatch_groups (
+          id,
+          name,
+          phone_number,
+          signalwire_subscriber_id
+        )
+      `)
+      .eq('user_id', user.id)
+
+    if (assignmentError) {
+      console.error('Error fetching user assignments:', assignmentError)
+    }
+
+    // Build available_lines array for the UI
+    const availableLines = []
+    
+    if (assignments) {
+      for (const assignment of assignments) {
+        // Add dispatch group line
+        if (assignment.dispatch_groups) {
+          availableLines.push({
+            id: assignment.dispatch_groups.id,
+            type: 'group',
+            name: assignment.dispatch_groups.name,
+            phone_number: assignment.dispatch_groups.phone_number,
+            subscriber_id: assignment.dispatch_groups.signalwire_subscriber_id,
+            is_default: assignment.is_default
+          })
+        }
+        
+        // Add direct line if exists
+        if (assignment.direct_phone) {
+          availableLines.push({
+            id: `direct-${assignment.id}`,
+            type: 'direct',
+            name: 'Personal Line',
+            phone_number: assignment.direct_phone,
+            subscriber_id: assignment.direct_subscriber_id,
+            is_default: !assignment.dispatch_groups && assignment.is_default
+          })
+        }
+      }
+    }
+
     return new Response(
       JSON.stringify({
         token: tokenData.token,
         subscriber_id: subscriberId,
         expires_at: tokenData.expires_at,
+        available_lines: availableLines,
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
