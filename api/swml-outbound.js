@@ -7,17 +7,37 @@ export default function handler(req, res) {
     return res.status(200).end()
   }
 
-  // SignalWire sends POST with call data
-  const userVariables = req.body?.call?.userVariables || {}
-  const destination = userVariables.destination
-  const callerID = userVariables.callerID || process.env.DEFAULT_CALLER_ID
+  // Log full request for debugging
+  console.log('=== SWML OUTBOUND REQUEST ===')
+  console.log('Method:', req.method)
+  console.log('Headers:', JSON.stringify(req.headers, null, 2))
+  console.log('Body:', JSON.stringify(req.body, null, 2))
+  console.log('Query:', JSON.stringify(req.query, null, 2))
 
-  console.log('SWML Outbound Request:', JSON.stringify(req.body, null, 2))
-  console.log('Destination:', destination)
-  console.log('Caller ID:', callerID)
+  // SignalWire may send userVariables at different paths depending on context
+  // Try multiple locations
+  const body = req.body || {}
+  const userVariables = body.call?.userVariables || body.vars || body.userVariables || {}
+  
+  // Also check query params as fallback
+  const destination = userVariables.destination || req.query.destination
+  const callerID = userVariables.callerID || req.query.callerID || process.env.DEFAULT_CALLER_ID || '+16503946801'
 
+  console.log('Parsed destination:', destination)
+  console.log('Parsed callerID:', callerID)
+
+  // If no destination, return a helpful error in SWML format
   if (!destination) {
-    return res.status(400).json({ error: 'Missing destination in userVariables' })
+    console.log('No destination found - returning error SWML')
+    return res.status(200).json({
+      version: '1.0.0',
+      sections: {
+        main: [
+          { play: { say: 'Error: No destination number provided.' } },
+          { hangup: {} }
+        ]
+      }
+    })
   }
 
   // Return SWML to connect the call
